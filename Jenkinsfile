@@ -48,12 +48,17 @@ pipeline {
             environment {
                 SONAR_TOKEN = credentials('sonar-token')
             }
+
             steps {
-                sh """
-                sonar-scanner \
-                  -Dsonar.host.url=${SONAR_HOST_URL} \
-                  -Dsonar.token=${SONAR_TOKEN}
-                """
+                script {
+                    def scannerHome = tool 'SonarScanner'
+
+                    sh """
+                        ${scannerHome}/bin/sonar-scanner \
+                        -Dsonar.host.url=${SONAR_HOST_URL} \
+                        -Dsonar.token=${SONAR_TOKEN}
+                    """
+                }
             }
         }
 
@@ -68,7 +73,7 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh """
-                docker buildx build \
+                    docker buildx build \
                     --platform linux/amd64 \
                     --tag ${DOCKER_IMAGE} \
                     --load .
@@ -79,12 +84,12 @@ pipeline {
         stage('Trivy Scan') {
             steps {
                 sh """
-                trivy image \
-                  --exit-code 1 \
-                  --severity HIGH,CRITICAL \
-                  --format json \
-                  --output trivy-report.json \
-                  ${DOCKER_IMAGE}
+                    trivy image \
+                    --exit-code 1 \
+                    --severity HIGH,CRITICAL \
+                    --format json \
+                    --output trivy-report.json \
+                    ${DOCKER_IMAGE}
                 """
             }
         }
@@ -98,12 +103,12 @@ pipeline {
         stage('Generate SBOM') {
             steps {
                 sh """
-                trivy image \
+                    trivy image \
                     --format spdx-json \
                     --output sbom-spdx.json \
                     ${DOCKER_IMAGE}
 
-                trivy image \
+                    trivy image \
                     --format cyclonedx \
                     --output sbom-cyclonedx.json \
                     ${DOCKER_IMAGE}
@@ -121,13 +126,14 @@ pipeline {
             environment {
                 DOCKER_CREDS = credentials('dockerhub-credentials')
             }
+
             steps {
                 sh """
-                echo ${DOCKER_CREDS_PSW} | docker login \
+                    echo ${DOCKER_CREDS_PSW} | docker login \
                     -u ${DOCKER_CREDS_USR} \
                     --password-stdin
 
-                docker push ${DOCKER_IMAGE}
+                    docker push ${DOCKER_IMAGE}
                 """
             }
         }
