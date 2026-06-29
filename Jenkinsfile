@@ -23,6 +23,7 @@ pipeline {
             steps {
                 sh 'npm run test:coverage'
             }
+
             post {
                 always {
                     junit 'reports/junit.xml'
@@ -40,15 +41,20 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
+
                     def scannerHome = tool 'SonarScanner'
 
                     withSonarQubeEnv('sonarqube-server-1') {
-                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+
+                        withCredentials([
+                            string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')
+                        ]) {
 
                             sh """
                                 ${scannerHome}/bin/sonar-scanner \
                                   -Dsonar.token=${SONAR_TOKEN}
                             """
+
                         }
                     }
                 }
@@ -101,6 +107,7 @@ pipeline {
 
         stage('Generate SBOM') {
             steps {
+
                 sh """
                     trivy image \
                         --format cyclonedx \
@@ -122,17 +129,21 @@ pipeline {
         }
 
         stage('Push Docker Image') {
+
             environment {
-                DOCKER = credentials('dockerhub-credentials')
+                DOCKER = credentials('santoudllo-dockerhub-password')
             }
 
             steps {
+
                 sh """
                     echo ${DOCKER_PSW} | docker login \
                         -u ${DOCKER_USR} \
                         --password-stdin
 
                     docker push ${DOCKER_IMAGE}
+
+                    docker logout
                 """
             }
         }
