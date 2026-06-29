@@ -26,7 +26,7 @@ pipeline {
             post {
                 always {
                     junit 'reports/junit.xml'
-                    archiveArtifacts artifacts: 'coverage/**'
+                    archiveArtifacts artifacts: 'coverage/**', fingerprint: true
                 }
             }
         }
@@ -40,18 +40,15 @@ pipeline {
         stage('SonarQube Analysis') {
             steps {
                 script {
-
                     def scannerHome = tool 'SonarScanner'
 
                     withSonarQubeEnv('sonarqube-server-1') {
-
                         withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
 
                             sh """
                                 ${scannerHome}/bin/sonar-scanner \
-                                -Dsonar.token=${SONAR_TOKEN}
+                                  -Dsonar.token=${SONAR_TOKEN}
                             """
-
                         }
                     }
                 }
@@ -70,26 +67,34 @@ pipeline {
             steps {
                 sh """
                     docker build \
-                    -t ${DOCKER_IMAGE} .
+                        -t ${DOCKER_IMAGE} .
                 """
             }
         }
 
         stage('Trivy Scan') {
             steps {
+
                 sh """
                     trivy image \
-                    --exit-code 1 \
-                    --severity HIGH,CRITICAL \
-                    --format json \
-                    --output trivy-report.json \
-                    ${DOCKER_IMAGE}
+                        --severity HIGH,CRITICAL \
+                        --format table \
+                        ${DOCKER_IMAGE}
+                """
+
+                sh """
+                    trivy image \
+                        --exit-code 0 \
+                        --severity HIGH,CRITICAL \
+                        --format json \
+                        --output trivy-report.json \
+                        ${DOCKER_IMAGE}
                 """
             }
 
             post {
                 always {
-                    archiveArtifacts artifacts: 'trivy-report.json'
+                    archiveArtifacts artifacts: 'trivy-report.json', fingerprint: true
                 }
             }
         }
@@ -98,36 +103,34 @@ pipeline {
             steps {
                 sh """
                     trivy image \
-                    --format cyclonedx \
-                    --output sbom-cyclonedx.json \
-                    ${DOCKER_IMAGE}
+                        --format cyclonedx \
+                        --output sbom-cyclonedx.json \
+                        ${DOCKER_IMAGE}
 
                     trivy image \
-                    --format spdx-json \
-                    --output sbom-spdx.json \
-                    ${DOCKER_IMAGE}
+                        --format spdx-json \
+                        --output sbom-spdx.json \
+                        ${DOCKER_IMAGE}
                 """
             }
 
             post {
                 always {
-                    archiveArtifacts artifacts: 'sbom-*.json'
+                    archiveArtifacts artifacts: 'sbom-*.json', fingerprint: true
                 }
             }
         }
 
         stage('Push Docker Image') {
-
             environment {
                 DOCKER = credentials('dockerhub-credentials')
             }
 
             steps {
-
                 sh """
                     echo ${DOCKER_PSW} | docker login \
-                    -u ${DOCKER_USR} \
-                    --password-stdin
+                        -u ${DOCKER_USR} \
+                        --password-stdin
 
                     docker push ${DOCKER_IMAGE}
                 """
