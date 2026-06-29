@@ -3,16 +3,9 @@ pipeline {
 
     environment {
         DOCKER_IMAGE = "santoudllo54242/tasklist-backend:${BUILD_NUMBER}"
-        SONAR_HOST_URL = "https://sonarqube.cicd.kits.ext.educentre.fr"
     }
 
     stages {
-
-        stage('Checkout') {
-            steps {
-                echo 'Repository cloned successfully'
-            }
-        }
 
         stage('Install Dependencies') {
             steps {
@@ -22,19 +15,19 @@ pipeline {
 
         stage('Generate Prisma Client') {
             steps {
-                sh 'npx prisma generate'
+                sh 'npm run prisma:generate'
             }
         }
 
-        stage('Unit Tests') {
+        stage('Unit Tests + Coverage') {
             steps {
-                sh 'npm run test'
+                sh 'npm run test:coverage'
             }
-        }
-
-        stage('Publish Test Reports') {
-            steps {
-                junit 'reports/junit.xml'
+            post {
+                always {
+                    junit 'reports/junit.xml'
+                    archiveArtifacts artifacts: 'coverage/**'
+                }
             }
         }
 
@@ -45,19 +38,22 @@ pipeline {
         }
 
         stage('SonarQube Analysis') {
-            environment {
-                SONAR_TOKEN = credentials('sonar-token')
-            }
-
             steps {
                 script {
+
                     def scannerHome = tool 'SonarScanner'
 
-                    sh """
-                        ${scannerHome}/bin/sonar-scanner \
-                        -Dsonar.host.url=${SONAR_HOST_URL} \
-                        -Dsonar.token=${SONAR_TOKEN}
-                    """
+                    withSonarQubeEnv('sonarqube-server-1') {
+
+                        withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
+
+                            sh """
+                                ${scannerHome}/bin/sonar-scanner \
+                                -Dsonar.token=${SONAR_TOKEN}
+                            """
+
+                        }
+                    }
                 }
             }
         }
@@ -73,10 +69,8 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 sh """
-                    docker buildx build \
-                    --platform linux/amd64 \
-                    --tag ${DOCKER_IMAGE} \
-                    --load .
+                    docker build \
+                    -t ${DOCKER_IMAGE} .
                 """
             }
         }
@@ -92,11 +86,11 @@ pipeline {
                     ${DOCKER_IMAGE}
                 """
             }
-        }
 
-        stage('Archive Trivy Report') {
-            steps {
-                archiveArtifacts artifacts: 'trivy-report.json', fingerprint: true
+            post {
+                always {
+                    archiveArtifacts artifacts: 'trivy-report.json'
+                }
             }
         }
 
@@ -104,33 +98,35 @@ pipeline {
             steps {
                 sh """
                     trivy image \
-                    --format spdx-json \
-                    --output sbom-spdx.json \
-                    ${DOCKER_IMAGE}
-
-                    trivy image \
                     --format cyclonedx \
                     --output sbom-cyclonedx.json \
                     ${DOCKER_IMAGE}
+
+                    trivy image \
+                    --format spdx-json \
+                    --output sbom-spdx.json \
+                    ${DOCKER_IMAGE}
                 """
             }
-        }
 
-        stage('Archive SBOM') {
-            steps {
-                archiveArtifacts artifacts: 'sbom-*.json', fingerprint: true
+            post {
+                always {
+                    archiveArtifacts artifacts: 'sbom-*.json'
+                }
             }
         }
 
         stage('Push Docker Image') {
+
             environment {
-                DOCKER_CREDS = credentials('dockerhub-credentials')
+                DOCKER = credentials('dockerhub-credentials')
             }
 
             steps {
+
                 sh """
-                    echo ${DOCKER_CREDS_PSW} | docker login \
-                    -u ${DOCKER_CREDS_USR} \
+                    echo ${DOCKER_PSW} | docker login \
+                    -u ${DOCKER_USR} \
                     --password-stdin
 
                     docker push ${DOCKER_IMAGE}
